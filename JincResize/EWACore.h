@@ -10,9 +10,15 @@ class EWACore
 public:
   virtual float GetSupport() = 0;
   float GetFactor(float dist);
+  void InitLutTable();
+  void DestroyLutTable();
 
 protected:
   virtual float factor(float dist) = 0;
+
+private:
+  float* lut;
+  float lut_factor;
 };
 
 #endif

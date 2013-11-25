@@ -24,10 +24,13 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
 
   vi.width = width;
   vi.height = height;
+
+  func->InitLutTable();
 }
 
 FilteredEWAResize::~FilteredEWAResize()
 {
+  func->DestroyLutTable();
   delete func;
 }
 
