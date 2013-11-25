@@ -1,0 +1,7 @@
+Build
+test
+*.*sdf
+*.suo
+*.user
+Debug
+Release
