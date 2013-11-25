@@ -39,6 +39,27 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
     crop_left, crop_top, crop_width, crop_height
   );
 
+  if (!vi.IsY8()) {
+    int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
+    int subsample_h = vi.GetPlaneHeightSubsampling(PLANAR_U);
+
+    double div_w = 1 << subsample_w;
+    double div_h = 1 << subsample_h;
+
+    ResizePlane(
+      dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
+      src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+      crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
+    );
+
+    ResizePlane(
+      dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
+      src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+      crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
+    );
+    
+  }
+
   return dst;
 }
 
@@ -58,8 +79,8 @@ void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, i
   double ypos = start_y;
   double xpos = start_x;
 
-  for (int y = 0; y < vi.height; y++) {
-    for (int x = 0; x < vi.width; x++) {
+  for (int y = 0; y < dst_height; y++) {
+    for (int x = 0; x < dst_width; x++) {
       int window_end_x = int(xpos + filter_support);
       int window_end_y = int(ypos + filter_support);
 
