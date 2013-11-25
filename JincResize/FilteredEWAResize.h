@@ -8,16 +8,19 @@
 class FilteredEWAResize : public GenericVideoFilter
 {
 public:
-  FilteredEWAResize(PClip _child, int width, int height, EWACore *func, IScriptEnvironment* env);
+  FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height, EWACore *func, IScriptEnvironment* env);
   ~FilteredEWAResize();
 
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
 
 private:
-  void ResizePlane(BYTE* dstp, const BYTE* srcp, int dst_pitch, int src_pitch);
+  void ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
+                   int src_width, int src_height, int dst_width, int dst_height,
+                   double crop_left, double crop_top, double crop_width, double crop_height);
 
   EWACore *func;
-  double src_width, src_height;
+  int src_width, src_height;
+  double crop_left, crop_top, crop_width, crop_height;
 };
 
 #endif

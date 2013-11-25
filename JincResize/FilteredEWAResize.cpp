@@ -2,9 +2,10 @@
 #include <math.h>
 #include "FilteredEWAResize.h"
 
-FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, EWACore *func, IScriptEnvironment* env) :
+FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height, EWACore *func, IScriptEnvironment* env) :
   GenericVideoFilter(_child),
-  func( func )
+  func( func ),
+  crop_left(crop_left), crop_top(crop_top), crop_width(crop_width), crop_height(crop_height)
 {
   if (!vi.IsPlanar() || !vi.IsYUV()) {
     env->ThrowError("JincResize: planar YUV data only!");
@@ -31,32 +32,34 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
   PVideoFrame src = child->GetFrame(n, env);
   PVideoFrame dst = env->NewVideoFrame(vi);
 
-  try{
-    ResizePlane(dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch());
-  } catch (int d) {
-    env->ThrowError("Error! %d", d);
-  }
+  // Luma
+  ResizePlane(
+    dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
+    src_width, src_height, vi.width, vi.height,
+    crop_left, crop_top, crop_width, crop_height
+  );
 
   return dst;
 }
 
-void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch)
+void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
+                                    int src_width, int src_height, int dst_width, int dst_height,
+                                    double crop_left, double crop_top, double crop_width, double crop_height)
 {
   double filter_support = func->GetSupport();
   int filter_size = ceil(filter_support * 2.0);
 
-  double start_x = (src_width - vi.width) / (vi.width*2);
-  double start_y = (src_height - vi.height) / (vi.height*2);
+  double start_x = crop_left + (crop_width - vi.width) / (vi.width*2);
+  double start_y = crop_top + (crop_height - vi.height) / (vi.height*2);
 
-  double x_step = src_width / vi.width;
-  double y_step = src_height / vi.height;
+  double x_step = crop_width / dst_width;
+  double y_step = crop_height / dst_height;
 
   double ypos = start_y;
+  double xpos = start_x;
+
   for (int y = 0; y < vi.height; y++) {
-    double xpos = start_x;
-
     for (int x = 0; x < vi.width; x++) {
-
       int window_end_x = int(xpos + filter_support);
       int window_end_y = int(ypos + filter_support);
 
@@ -82,9 +85,9 @@ void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, i
       double current_y = ypos < 0 ? 0 : (ypos > (src_height-1) ? (src_height-1) : ypos);
 
       int window_y = window_begin_y;
-      for (int lx = 0; lx < filter_size; lx++) {
-        int window_x = window_begin_x;
-        for (int ly = 0; ly < filter_size; ly++) {
+      int window_x = window_begin_x;
+      for (int ly = 0; ly < filter_size; ly++) {
+        for (int lx = 0; lx < filter_size; lx++) {
           double dx = (current_x-window_x)*(current_x-window_x);
           double dy = (current_y-window_y)*(current_y-window_y);
 
@@ -98,6 +101,7 @@ void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, i
           window_x++;
         }
 
+        window_x = window_begin_x;
         window_y++;
       }
       
@@ -108,5 +112,6 @@ void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, i
 
     dst += dst_pitch;
     ypos += y_step;
+    xpos = start_x;
   }
 }
