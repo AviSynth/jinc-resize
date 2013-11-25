@@ -113,7 +113,8 @@ static double P1(double x)
   return p/q;
 }
 
-static double Q1(double x) {
+static double Q1(double x)
+{
   static const double
     Pone[] = {
       0.3511751914303552822533318e+3,
@@ -213,5 +214,5 @@ float JincFilter::factor(float dist)
   dist = sqrt(dist);
   if (dist > support)
     return 0;
-  return Jinc(dist) * Jinc(dist * window_factor);
+  return (float) (Jinc(dist) * Jinc(dist * window_factor));
 }

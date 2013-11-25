@@ -8,11 +8,15 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
   crop_left(crop_left), crop_top(crop_top), crop_width(crop_width), crop_height(crop_height)
 {
   if (!vi.IsPlanar() || !vi.IsYUV()) {
-    env->ThrowError("JincResize: planar YUV data only!");
+    env->ThrowError("JincResize: Only planar YUV colorspaces are supported");
   }
 
   if (width < vi.width || height < vi.height) {
     env->ThrowError("JincResize: java.lang.NotImplementedException");
+  }
+
+  if (vi.width < int(ceil(2*func->GetSupport())) || vi.height < int(ceil(2*func->GetSupport()))) {
+    env->ThrowError("JincResize: Source image too small.");
   }
 
   src_width = vi.width;
