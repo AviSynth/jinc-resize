@@ -2,6 +2,12 @@
 #ifndef __EWACORE_H
 #define __EWACORE_H
 
+template<typename T>
+T clamp(T a, T b, T c)
+{
+  return a > b ? a : (b > c ? c : b);
+}
+
 /*
  * Base Class for EWA Resampler Core
  */

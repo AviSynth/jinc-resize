@@ -109,8 +109,8 @@ void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, i
       float result = 0.0;
       float divider = 0.0;
 
-      double current_x = xpos < 0 ? 0 : (xpos > (src_width-1) ? (src_width-1) : xpos);
-      double current_y = ypos < 0 ? 0 : (ypos > (src_height-1) ? (src_height-1) : ypos);
+      double current_x = clamp(0., xpos, src_width-1.);
+      double current_y = clamp(0., ypos, src_height-1.);
 
       int window_y = window_begin_y;
       int window_x = window_begin_x;
