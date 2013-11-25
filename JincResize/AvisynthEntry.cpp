@@ -21,14 +21,16 @@ AVSValue __cdecl Create_EWAResizer(PClip clip, int target_width, int target_heig
 }
 
 template<int tap>
-AVSValue __cdecl Create_JincResizer(AVSValue args, void* user_data, IScriptEnvironment* env) {
+AVSValue __cdecl Create_JincResizer(AVSValue args, void* user_data, IScriptEnvironment* env)
+{
   JincFilter* jinc = new JincFilter(tap);
   return Create_EWAResizer(args[0].AsClip(), args[1].AsInt(), args[2].AsInt(), &args[3], jinc, env);
 }
 
 const AVS_Linkage *AVS_linkage = nullptr;
 
-extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* const vectors) {
+extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit3(IScriptEnvironment* env, const AVS_Linkage* const vectors)
+{
   AVS_linkage = vectors;
 
   env->AddFunction("Jinc36Resize", "cii[src_left]f[src_top]f[src_width]f[src_height]f", Create_JincResizer<3>, 0);
