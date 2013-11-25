@@ -2,83 +2,15 @@
 #include <math.h>
 #include "FilteredEWAResize.h"
 
-FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height, EWACore *func, IScriptEnvironment* env) :
-  GenericVideoFilter(_child),
-  func( func ),
-  crop_left(crop_left), crop_top(crop_top), crop_width(crop_width), crop_height(crop_height)
-{
-  if (!vi.IsPlanar() || !vi.IsYUV()) {
-    env->ThrowError("JincResize: Only planar YUV colorspaces are supported");
-  }
-
-  if (width < vi.width || height < vi.height) {
-    env->ThrowError("JincResize: java.lang.NotImplementedException");
-  }
-
-  if (vi.width < int(ceil(2*func->GetSupport())) || vi.height < int(ceil(2*func->GetSupport()))) {
-    env->ThrowError("JincResize: Source image too small.");
-  }
-
-  src_width = vi.width;
-  src_height = vi.height;
-
-  vi.width = width;
-  vi.height = height;
-
-  func->InitLutTable();
-}
-
-FilteredEWAResize::~FilteredEWAResize()
-{
-  func->DestroyLutTable();
-  delete func;
-}
-
-PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env)
-{
-  PVideoFrame src = child->GetFrame(n, env);
-  PVideoFrame dst = env->NewVideoFrame(vi);
-
-  // Luma
-  ResizePlane(
-    dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
-    src_width, src_height, vi.width, vi.height,
-    crop_left, crop_top, crop_width, crop_height
-  );
-
-  if (!vi.IsY8()) {
-    int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
-    int subsample_h = vi.GetPlaneHeightSubsampling(PLANAR_U);
-
-    double div_w = 1 << subsample_w;
-    double div_h = 1 << subsample_h;
-
-    ResizePlane(
-      dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
-      src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
-      crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
-    );
-
-    ResizePlane(
-      dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
-      src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
-      crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
-    );
-    
-  }
-
-  return dst;
-}
-
-void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
-                                    int src_width, int src_height, int dst_width, int dst_height,
-                                    double crop_left, double crop_top, double crop_width, double crop_height)
+void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
+                    int src_width, int src_height, int dst_width, int dst_height,
+                    double crop_left, double crop_top, double crop_width, double crop_height)
 {
   double filter_support = func->GetSupport();
   int filter_size = ceil(filter_support * 2.0);
 
-  double start_x = crop_left + (crop_width - vi.width) / (vi.width*2);
-  double start_y = crop_top + (crop_height - vi.height) / (vi.height*2);
+  double start_x = crop_left + (crop_width - dst_width) / (dst_width*2);
+  double start_y = crop_top + (crop_height - dst_height) / (dst_height*2);
 
   double x_step = crop_width / dst_width;
   double y_step = crop_height / dst_height;
@@ -132,7 +64,7 @@ void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, i
         window_x = window_begin_x;
         window_y++;
       }
-      
+
       dst[x] = min(255, max(0, int((result/divider)+0.5)));
 
       xpos += x_step;
@@ -142,4 +74,72 @@ void FilteredEWAResize::ResizePlane(BYTE* dst, const BYTE* src, int dst_pitch, i
     ypos += y_step;
     xpos = start_x;
   }
+}
+
+FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height, EWACore *func, IScriptEnvironment* env) :
+  GenericVideoFilter(_child),
+  func(func),
+  crop_left(crop_left), crop_top(crop_top), crop_width(crop_width), crop_height(crop_height)
+{
+  if (!vi.IsPlanar() || !vi.IsYUV()) {
+    env->ThrowError("JincResize: Only planar YUV colorspaces are supported");
+  }
+
+  if (width < vi.width || height < vi.height) {
+    env->ThrowError("JincResize: java.lang.NotImplementedException");
+  }
+
+  if (vi.width < int(ceil(2*func->GetSupport())) || vi.height < int(ceil(2*func->GetSupport()))) {
+    env->ThrowError("JincResize: Source image too small.");
+  }
+
+  src_width = vi.width;
+  src_height = vi.height;
+
+  vi.width = width;
+  vi.height = height;
+
+  func->InitLutTable();
+}
+
+FilteredEWAResize::~FilteredEWAResize()
+{
+  func->DestroyLutTable();
+  delete func;
+}
+
+PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env)
+{
+  PVideoFrame src = child->GetFrame(n, env);
+  PVideoFrame dst = env->NewVideoFrame(vi);
+
+  // Luma
+  resize_plane_c(func,
+    dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
+    src_width, src_height, vi.width, vi.height,
+    crop_left, crop_top, crop_width, crop_height
+  );
+
+  if (!vi.IsY8()) {
+    int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
+    int subsample_h = vi.GetPlaneHeightSubsampling(PLANAR_U);
+
+    double div_w = 1 << subsample_w;
+    double div_h = 1 << subsample_h;
+
+    resize_plane_c(func,
+      dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
+      src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+      crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
+    );
+
+    resize_plane_c(func,
+      dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
+      src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+      crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
+    );
+    
+  }
+
+  return dst;
 }
