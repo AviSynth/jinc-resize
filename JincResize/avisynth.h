@@ -926,7 +926,7 @@ private:
 
 // For GetCPUFlags.  These are backwards-compatible with those in VirtualDub.
 enum {
-                    /* oldest CPU to support extension */
+  /* oldest CPU to support extension */
   CPUF_FORCE        =  0x01,   //  N/A
   CPUF_FPU          =  0x02,   //  386/486DX
   CPUF_MMX          =  0x04,   //  P55C, K6, PII
@@ -939,9 +939,10 @@ enum {
                                //          only Hammer will have anyway)
   CPUF_SSE3         = 0x100,   //  PIV+, K8 Venice
   CPUF_SSSE3        = 0x200,   //  Core 2
-  CPUF_SSE4         = 0x400,   //  Penryn, Wolfdale, Yorkfield
-  CPUF_SSE4_1       = 0x400,
-  CPUF_SSE4_2       = 0x800,   //  Nehalem
+  CPUF_SSE4         = 0x400,
+  CPUF_SSE4_1       = 0x400,   //  Penryn, Wolfdale, Yorkfield  
+  CPUF_AVX          = 0x800,   //  Sandy Bridge, Bulldozer
+  CPUF_SSE4_2       = 0x1000,  //  Nehalem
 };
 #if 0
 #define MAX_INT 0x7fffffff

@@ -2,8 +2,15 @@
 #include <math.h>
 #include "FilteredEWAResize.h"
 
+// MSVC110 generates much slower code, and ICL14 generate crash
+// with current AVX implementation
+//#define USE_AVX
+
 // Intrinsics
 #include "smmintrin.h"
+#ifdef USE_AVX
+# include "immintrin.h"
+#endif
 
 static void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
                            int src_width, int src_height, int dst_width, int dst_height,
@@ -225,6 +232,148 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
   }
 }
 
+#ifdef USE_AVX
+template<int filter_size>
+static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
+                             int src_width, int src_height, int dst_width, int dst_height,
+                             double crop_left, double crop_top, double crop_width, double crop_height)
+{
+  float filter_support = func->GetSupport();
+  int filter_size2 = (int) ceil(filter_support * 2.0);
+
+  if (filter_size2 != filter_size) {
+    throw 0;
+  }
+
+  float start_x = (float) (crop_left + (crop_width - dst_width) / (dst_width*2));
+  float start_y = (float) (crop_top + (crop_height - dst_height) / (dst_height*2));
+
+  float x_step = (float) (crop_width / dst_width);
+  float y_step = (float) (crop_height / dst_height);
+
+  float ypos = start_y;
+  float xpos = start_x;
+
+  __m256 zero = _mm256_setzero_ps();
+  __m128i zeroi = _mm_setzero_si128();
+
+  for (int y = 0; y < dst_height; y++) {
+    for (int x = 0; x < dst_width; x++) {
+      int window_end_x = int(xpos + filter_support);
+      int window_end_y = int(ypos + filter_support);
+
+      if (window_end_x >= src_width)
+        window_end_x = src_width-1;
+
+      if (window_end_y >= src_height)
+        window_end_y = src_height-1;
+
+      int window_begin_x = window_end_x - filter_size + 1;
+      int window_begin_y = window_end_y - filter_size + 1;
+
+      if (window_begin_x < 0)
+        window_begin_x = 0;
+
+      if (window_begin_y < 0)
+        window_begin_y = 0;
+
+      __m256 result = zero;
+      __m256 divider = zero;
+
+      float current_x = clamp((float) 0., xpos, src_width-(float) 1.);
+      float current_y = clamp((float) 0., ypos, src_height-(float) 1.);
+      __m256 curr_x = _mm256_set1_ps(current_x);
+      __m256 curr_y = _mm256_set1_ps(current_y);
+
+      int window_y = window_begin_y;
+      int window_x = window_begin_x;
+
+      const BYTE* src_begin = src + window_x + window_y*src_pitch;
+
+      for (int ly = 0; ly < filter_size; ly++) {
+        const BYTE* src_current = src_begin;
+        src_begin += src_pitch;
+
+        // Same stuff
+        __m256 wind_y = _mm256_set1_ps(window_y);
+
+        // Process 8 pixel per internal loop (AVX 256bit + single-precision)
+        for (int lx = 0; lx < filter_size; lx+=8) {
+          // ---------------------------------
+          // Calculate coeff
+
+          __declspec(align(16))
+          float factor[8];
+
+          __m256 wind_x = _mm256_setr_ps(window_x, window_x+1, window_x+2, window_x+3, window_x+4, window_x+5, window_x+6, window_x+7);
+
+          __m256 dx = _mm256_sub_ps(curr_x, wind_x);
+          __m256 dy = _mm256_sub_ps(curr_y, wind_y);
+
+          dx = _mm256_mul_ps(dx, dx);
+          dy = _mm256_mul_ps(dy, dy);
+
+          __m256 dist_simd = _mm256_add_ps(dx, dy);
+
+          _mm256_store_ps(factor, dist_simd);
+
+          for (int i = 0; i < 8; i++) {
+            factor[i] = func->GetFactor(factor[i]);
+          }
+
+          __m256 factor_simd = _mm256_load_ps(factor);
+          window_x += 8;
+          // ---------------------------------
+
+          // ---------------------------------
+          // Load data and convert to floating point
+          __m128i data_epu8 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_current+lx));
+          __m128i data_ep16 = _mm_unpacklo_epi8(data_epu8, zeroi);
+          __m128i data_ep32_l = _mm_unpacklo_epi16(data_ep16, zeroi);
+          __m128i data_ep32_h = _mm_unpackhi_epi16(data_ep16, zeroi);
+          __m256i data_ep32 = _mm256_set_m128i(data_ep32_h, data_ep32_l);
+          __m256  data      = _mm256_cvtepi32_ps(data_ep32);
+          // ---------------------------------
+
+          // ---------------------------------
+          // Process data
+          __m256 res = _mm256_mul_ps(data, factor_simd);
+
+          result = _mm256_add_ps(result, res);
+          divider = _mm256_add_ps(divider, factor_simd);
+          // ---------------------------------
+        }
+
+        window_x = window_begin_x;
+        window_y++;
+      }
+
+      // Add to single float at the lower bit
+      result = _mm256_hadd_ps(result, zero);
+      result = _mm256_hadd_ps(result, zero);
+
+      divider = _mm256_hadd_ps(divider, zero);
+      divider = _mm256_hadd_ps(divider, zero);
+
+      __m128 result_128 = _mm_div_ss(
+        _mm256_castps256_ps128(result),
+        _mm256_castps256_ps128(divider)
+      );
+
+      int result_i = _mm_cvtss_si32(result_128);
+
+      dst[x] = clamp(0, result_i, 255);
+
+      xpos += x_step;
+    }
+
+    dst += dst_pitch;
+    ypos += y_step;
+    xpos = start_x;
+  }
+}
+#endif
+
 FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height, EWACore *func, IScriptEnvironment* env) :
   GenericVideoFilter(_child),
   func(func),
@@ -251,6 +400,23 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
   func->InitLutTable();
 
   // Select the EWA Resize core
+#ifdef USE_AVX
+  if (env->GetCPUFlags() & CPUF_AVX) {
+    switch (int(ceil(func->GetSupport() * 2.0))) {
+
+#define size(n)  \
+    case n: resizer = resize_plane_avx<n>; break;
+
+      size(3); size(5); size(7); size(9);
+      size(11); size(13); size(15); size(17);
+
+#undef size
+
+    default:
+      env->ThrowError("JincResize: Internal error; filter size not supported");
+    }
+  } else
+#endif
   if (env->GetCPUFlags() & CPUF_SSE3) {
     switch (int(ceil(func->GetSupport() * 2.0))) {
 
