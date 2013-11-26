@@ -19,12 +19,13 @@ public:
   void InitLutTable();
   void DestroyLutTable();
 
+  float* lut;
+  float lut_factor;
+
 protected:
   virtual float factor(float dist) = 0;
 
 private:
-  float* lut;
-  float lut_factor;
 };
 
 #endif

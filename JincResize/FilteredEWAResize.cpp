@@ -124,6 +124,9 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
   __m128 src_width_1 = _mm_set1_ps(src_width-(float) 1);
   __m128 src_height_1 = _mm_set1_ps(src_height-(float) 1);
 
+  __m128 lut_factor = _mm_set1_ps(func->lut_factor);
+  __m128 lut_size = _mm_set1_ps(LUT_SIZE);
+
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
       int window_end_x = int(xpos + filter_support);
@@ -165,16 +168,16 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
         const BYTE* src_current = src_begin;
         src_begin += src_pitch;
 
-        // Same stuff
+        // Whole-loop stuff
         __m128 wind_y = _mm_set1_ps(window_y);
 
         // Process 4 pixel per internal loop (SSE 128bit + single-precision)
         for (int lx = 0; lx < filter_size; lx+=4) {
+
           // ---------------------------------
           // Calculate coeff
-
-          __declspec(align(16))
-          float factor[4];
+          __declspec(align(16)) float factor[4];
+          __declspec(align(16)) int factor_pos[4];
 
           __m128 wind_x = _mm_setr_ps(window_x, window_x+1, window_x+2, window_x+3);
 
@@ -185,14 +188,17 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
           dy = _mm_mul_ps(dy, dy);
 
           __m128 dist_simd = _mm_add_ps(dx, dy);
+          __m128 lut_pos = _mm_mul_ps(dist_simd, lut_factor);
+          lut_pos = _mm_min_ps(lut_pos, lut_size);
 
-          _mm_store_ps(factor, dist_simd);
+          _mm_store_si128(reinterpret_cast<__m128i*>(factor_pos), _mm_cvtps_epi32(lut_pos));
 
           for (int i = 0; i < 4; i++) {
-            factor[i] = func->GetFactor(factor[i]);
+            factor[i] = func->lut[factor_pos[i]];
           }
 
           __m128 factor_simd = _mm_load_ps(factor);
+
           window_x += 4;
           // ---------------------------------
 
@@ -393,14 +399,14 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
 /* EWACore implementation                                               */
 /************************************************************************/
 
-const int LUT_SIZE = 65536*9;
+const int LUT_SIZE = 8192;
 
 void EWACore::InitLutTable()
 {
   lut = new float[LUT_SIZE];
 
   float filter_end = GetSupport()*GetSupport();
-  lut_factor = ((float) LUT_SIZE / 9) / filter_end;
+  lut_factor = ((float) (LUT_SIZE - 16)) / filter_end;
 
   for (int i = 0; i < LUT_SIZE; i++) {
     lut[i] = factor((float)i / lut_factor);
