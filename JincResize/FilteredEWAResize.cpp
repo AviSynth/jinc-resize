@@ -2,9 +2,8 @@
 #include <math.h>
 #include "FilteredEWAResize.h"
 
-// ICL-compiled AVX is faster than ICL-compiled SSE
-// but is still slower than MSVC-compiled SSE
-// and MSVC-compiled AVX is much slower.
+// Both ICL and MSVC generates much slower
+// AVX code than SSE
 //#define USE_AVX
 
 // Intrinsics
@@ -379,6 +378,35 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
   _mm256_zeroupper();
 }
 #endif
+
+/************************************************************************/
+/* EWACore implementation                                               */
+/************************************************************************/
+
+const int LUT_SIZE = 65536*9;
+
+void EWACore::InitLutTable()
+{
+  lut = new float[LUT_SIZE];
+
+  float filter_end = GetSupport()*GetSupport();
+  lut_factor = ((float) LUT_SIZE / 9) / filter_end;
+
+  for (int i = 0; i < LUT_SIZE; i++) {
+    lut[i] = factor((float)i / lut_factor);
+  }
+}
+
+void EWACore::DestroyLutTable()
+{
+  delete[] lut;
+}
+
+inline float EWACore::GetFactor(float dist)
+{
+  int index = int(dist*lut_factor);
+  return lut[index];
+}
 
 FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height, EWACore *func, IScriptEnvironment* env) :
   GenericVideoFilter(_child),
