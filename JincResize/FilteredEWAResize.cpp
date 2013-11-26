@@ -2,7 +2,7 @@
 #include <math.h>
 #include "FilteredEWAResize.h"
 
-void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
+static void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
                     int src_width, int src_height, int dst_width, int dst_height,
                     double crop_left, double crop_top, double crop_width, double crop_height)
 {
@@ -20,6 +20,8 @@ void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, in
 
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
+      // Here, the window_*** variable specified a begin/size/end
+      // of EWA window to process.
       int window_end_x = int(xpos + filter_support);
       int window_end_y = int(ypos + filter_support);
 
@@ -41,6 +43,7 @@ void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, in
       float result = 0.0;
       float divider = 0.0;
 
+      // This is the location of current target pixel in source pixel
       float current_x = clamp((float) 0., xpos, src_width-(float) 1.);
       float current_y = clamp((float) 0., ypos, src_height-(float) 1.);
 
@@ -72,7 +75,7 @@ void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, in
         window_y++;
       }
 
-      dst[x] = min(255, max(0, int((result/divider)+0.5)));
+      dst[x] = clamp(0, int((result/divider)+0.5), 255);
 
       xpos += x_step;
     }
