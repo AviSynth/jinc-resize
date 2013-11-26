@@ -152,7 +152,7 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
         src_begin += src_pitch;
 
         // Same stuff
-        __m128 wind_y = _mm_setr_ps(window_y, window_y, window_y, window_y);
+        __m128 wind_y = _mm_set1_ps(window_y);
 
         // Process 4 pixel per internal loop (SSE 128bit + single-precision)
         for (int lx = 0; lx < filter_size; lx+=4) {
