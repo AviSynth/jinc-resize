@@ -121,6 +121,9 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
   __m128 zero = _mm_setzero_ps();
 # define zeroi  _mm_castps_si128(zero)
 
+  __m128 src_width_1 = _mm_set1_ps(src_width-(float) 1);
+  __m128 src_height_1 = _mm_set1_ps(src_height-(float) 1);
+
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
       int window_end_x = int(xpos + filter_support);
@@ -144,10 +147,14 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
       __m128 result = zero;
       __m128 divider = zero;
 
-      float current_x = clamp((float) 0., xpos, src_width-(float) 1.);
-      float current_y = clamp((float) 0., ypos, src_height-(float) 1.);
-      __m128 curr_x = _mm_set1_ps(current_x);
-      __m128 curr_y = _mm_set1_ps(current_y);
+      __m128 curr_x = _mm_set1_ps(xpos);
+      __m128 curr_y = _mm_set1_ps(ypos);
+
+      curr_x = _mm_max_ps(curr_x, zero);
+      curr_y = _mm_max_ps(curr_y, zero);
+
+      curr_x = _mm_min_ps(curr_x, src_width_1);
+      curr_y = _mm_min_ps(curr_y, src_height_1);
 
       int window_y = window_begin_y;
       int window_x = window_begin_x;
