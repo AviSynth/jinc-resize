@@ -119,7 +119,7 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
   float xpos = start_x;
 
   __m128 zero = _mm_setzero_ps();
-  __m128i zeroi = _mm_setzero_si128();
+# define zeroi  _mm_castps_si128(zero)
 
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
@@ -231,6 +231,8 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
     ypos += y_step;
     xpos = start_x;
   }
+
+#undef zeroi
 }
 
 #ifdef USE_AVX
