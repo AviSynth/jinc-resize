@@ -2,8 +2,9 @@
 #include <math.h>
 #include "FilteredEWAResize.h"
 
-// MSVC110 generates much slower code, and ICL14 generate crash
-// with current AVX implementation
+// ICL-compiled AVX is faster than ICL-compiled SSE
+// but is still slower than MSVC-compiled SSE
+// and MSVC-compiled AVX is much slower.
 //#define USE_AVX
 
 // Intrinsics
@@ -233,11 +234,15 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
 }
 
 #ifdef USE_AVX
+
+#pragma intel optimization_parameter target_arch=avx
 template<int filter_size>
 static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
                              int src_width, int src_height, int dst_width, int dst_height,
                              double crop_left, double crop_top, double crop_width, double crop_height)
 {
+  _mm256_zeroupper();
+
   float filter_support = func->GetSupport();
   int filter_size2 = (int) ceil(filter_support * 2.0);
 
@@ -321,7 +326,6 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
             factor[i] = func->GetFactor(factor[i]);
           }
 
-          __m256 factor_simd = _mm256_load_ps(factor);
           window_x += 8;
           // ---------------------------------
 
@@ -332,12 +336,13 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
           __m128i data_ep32_l = _mm_unpacklo_epi16(data_ep16, zeroi);
           __m128i data_ep32_h = _mm_unpackhi_epi16(data_ep16, zeroi);
           __m256i data_ep32 = _mm256_set_m128i(data_ep32_h, data_ep32_l);
-          __m256  data      = _mm256_cvtepi32_ps(data_ep32);
           // ---------------------------------
 
           // ---------------------------------
           // Process data
-          __m256 res = _mm256_mul_ps(data, factor_simd);
+          __m256 factor_simd = _mm256_load_ps(factor);
+          __m256 data        = _mm256_cvtepi32_ps(data_ep32);
+          __m256 res         = _mm256_mul_ps(data, factor_simd);
 
           result = _mm256_add_ps(result, res);
           divider = _mm256_add_ps(divider, factor_simd);
@@ -355,10 +360,9 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
       divider = _mm256_hadd_ps(divider, zero);
       divider = _mm256_hadd_ps(divider, zero);
 
-      __m128 result_128 = _mm_div_ss(
-        _mm256_castps256_ps128(result),
-        _mm256_castps256_ps128(divider)
-      );
+      result = _mm256_div_ps(result, divider);
+
+      __m128 result_128 = _mm256_castps256_ps128(result);
 
       int result_i = _mm_cvtss_si32(result_128);
 
@@ -371,6 +375,8 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
     ypos += y_step;
     xpos = start_x;
   }
+
+  _mm256_zeroupper();
 }
 #endif
 
