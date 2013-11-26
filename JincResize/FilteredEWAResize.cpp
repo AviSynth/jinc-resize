@@ -6,17 +6,17 @@ void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, in
                     int src_width, int src_height, int dst_width, int dst_height,
                     double crop_left, double crop_top, double crop_width, double crop_height)
 {
-  double filter_support = func->GetSupport();
+  float filter_support = func->GetSupport();
   int filter_size = ceil(filter_support * 2.0);
 
-  double start_x = crop_left + (crop_width - dst_width) / (dst_width*2);
-  double start_y = crop_top + (crop_height - dst_height) / (dst_height*2);
+  float start_x = (float) (crop_left + (crop_width - dst_width) / (dst_width*2));
+  float start_y = (float) (crop_top + (crop_height - dst_height) / (dst_height*2));
 
-  double x_step = crop_width / dst_width;
-  double y_step = crop_height / dst_height;
+  float x_step = (float) (crop_width / dst_width);
+  float y_step = (float) (crop_height / dst_height);
 
-  double ypos = start_y;
-  double xpos = start_x;
+  float ypos = start_y;
+  float xpos = start_x;
 
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
@@ -41,20 +41,27 @@ void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, in
       float result = 0.0;
       float divider = 0.0;
 
-      double current_x = clamp(0., xpos, src_width-1.);
-      double current_y = clamp(0., ypos, src_height-1.);
+      float current_x = clamp((float) 0., xpos, src_width-(float) 1.);
+      float current_y = clamp((float) 0., ypos, src_height-(float) 1.);
 
       int window_y = window_begin_y;
       int window_x = window_begin_x;
+
+      const BYTE* src_begin = src + window_x + window_y*src_pitch;
       for (int ly = 0; ly < filter_size; ly++) {
+        const BYTE* src_current = src_begin;
+        src_begin += src_pitch;
+
         for (int lx = 0; lx < filter_size; lx++) {
-          double dx = (current_x-window_x)*(current_x-window_x);
-          double dy = (current_y-window_y)*(current_y-window_y);
 
-          double dist_sqr = dx + dy;
+          float dx = (current_x-window_x)*(current_x-window_x);
+          float dy = (current_y-window_y)*(current_y-window_y);
 
-          float src_data = (src+window_y*src_pitch)[window_x];
+          float dist_sqr = dx + dy;
+
+          float src_data = src_current[lx];
           float factor = func->GetFactor(dist_sqr);
+
           result += src_data * factor;
           divider += factor;
 
