@@ -219,9 +219,10 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
 
       result = _mm_div_ss(result, divider);
 
-      int result_i = _mm_cvtss_si32(result);
+      __m128i result_i = _mm_cvtps_epi32(result);
+      result_i = _mm_packus_epi16(result_i, zeroi);
 
-      dst[x] = clamp(0, result_i, 255);
+      dst[x] = _mm_cvtsi128_si32(result_i);
 
       xpos += x_step;
     }
