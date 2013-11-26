@@ -103,7 +103,7 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
                              double crop_left, double crop_top, double crop_width, double crop_height)
 {
   float filter_support = func->GetSupport();
-  int filter_size2 = ceil(filter_support * 2.0);
+  int filter_size2 = (int) ceil(filter_support * 2.0);
 
   if (filter_size2 != filter_size) {
     throw 0;
