@@ -421,6 +421,10 @@ void EWACore::DestroyLutTable()
 inline float EWACore::GetFactor(float dist)
 {
   int index = int(dist*lut_factor);
+
+  if (index >= LUT_SIZE)
+    return 0;
+
   return lut[index];
 }
 
