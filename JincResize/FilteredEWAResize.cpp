@@ -135,6 +135,8 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
   __m128 lut_factor = _mm_set1_ps(func->lut_factor);
   __m128 lut_size = _mm_set1_ps(LUT_SIZE);
 
+  __m128 window_factor = _mm_setr_ps(0, 1, 2, 3);
+
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
       int window_end_x = int(xpos + filter_support);
@@ -187,7 +189,8 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
           __declspec(align(16)) float factor[4];
           __declspec(align(16)) int factor_pos[4];
 
-          __m128 wind_x = _mm_setr_ps(window_x, window_x+1, window_x+2, window_x+3);
+          __m128 wind_x = _mm_set1_ps(window_x);
+          wind_x = _mm_add_ps(wind_x, window_factor);
 
           __m128 dx = _mm_sub_ps(curr_x, wind_x);
           __m128 dy = _mm_sub_ps(curr_y, wind_y);
@@ -233,11 +236,13 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
 
       // Add to single float at the lower bit
       if (CPU == CPUF_SSE3) {
+
         result = _mm_hadd_ps(result, zero);
         result = _mm_hadd_ps(result, zero);
 
         divider = _mm_hadd_ps(divider, zero);
         divider = _mm_hadd_ps(divider, zero);
+
       } else {
         // use 3xshuffle + 2xadd instead of 2xhadd
         __m128 result1 = result;
