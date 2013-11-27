@@ -304,7 +304,15 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
   float xpos = start_x;
 
   __m256 zero = _mm256_setzero_ps();
-  __m128i zeroi = _mm_setzero_si128();
+# define zeroi  _mm_castps_si256(zero)
+
+  __m256 src_width_1 = _mm256_set1_ps(src_width-(float) 1);
+  __m256 src_height_1 = _mm256_set1_ps(src_height-(float) 1);
+
+  __m256 lut_factor = _mm256_set1_ps(func->lut_factor);
+  __m256 lut_size = _mm256_set1_ps(LUT_SIZE);
+
+  __m256 window_factor = _mm256_setr_ps(0, 1, 2, 3, 4, 5, 6, 7);
 
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
@@ -329,10 +337,14 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
       __m256 result = zero;
       __m256 divider = zero;
 
-      float current_x = clamp((float) 0., xpos, src_width-(float) 1.);
-      float current_y = clamp((float) 0., ypos, src_height-(float) 1.);
-      __m256 curr_x = _mm256_set1_ps(current_x);
-      __m256 curr_y = _mm256_set1_ps(current_y);
+      __m256 curr_x = _mm256_set1_ps(xpos);
+      __m256 curr_y = _mm256_set1_ps(ypos);
+
+      curr_x = _mm256_max_ps(curr_x, zero);
+      curr_y = _mm256_max_ps(curr_y, zero);
+
+      curr_x = _mm256_min_ps(curr_x, src_width_1);
+      curr_y = _mm256_min_ps(curr_y, src_height_1);
 
       int window_y = window_begin_y;
       int window_x = window_begin_x;
@@ -343,18 +355,19 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
         const BYTE* src_current = src_begin;
         src_begin += src_pitch;
 
-        // Same stuff
+        // Whole-loop stuff
         __m256 wind_y = _mm256_set1_ps(window_y);
 
-        // Process 8 pixel per internal loop (AVX 256bit + single-precision)
+        // Process 4 pixel per internal loop (AVX 256bit + single-precision)
         for (int lx = 0; lx < filter_size; lx+=8) {
+
           // ---------------------------------
           // Calculate coeff
+          __declspec(align(16)) float factor[8];
+          __declspec(align(16)) int factor_pos[8];
 
-          __declspec(align(16))
-          float factor[8];
-
-          __m256 wind_x = _mm256_setr_ps(window_x, window_x+1, window_x+2, window_x+3, window_x+4, window_x+5, window_x+6, window_x+7);
+          __m256 wind_x = _mm256_set1_ps(window_x);
+          wind_x = _mm256_add_ps(wind_x, window_factor);
 
           __m256 dx = _mm256_sub_ps(curr_x, wind_x);
           __m256 dy = _mm256_sub_ps(curr_y, wind_y);
@@ -363,12 +376,16 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
           dy = _mm256_mul_ps(dy, dy);
 
           __m256 dist_simd = _mm256_add_ps(dx, dy);
+          __m256 lut_pos = _mm256_mul_ps(dist_simd, lut_factor);
+          lut_pos = _mm256_min_ps(lut_pos, lut_size);
 
-          _mm256_store_ps(factor, dist_simd);
+          _mm256_store_si256(reinterpret_cast<__m256i*>(factor_pos), _mm256_cvtps_epi32(lut_pos));
 
           for (int i = 0; i < 8; i++) {
-            factor[i] = func->GetFactor(factor[i]);
+            factor[i] = func->lut[factor_pos[i]];
           }
+
+          __m256 factor_simd = _mm256_load_ps(factor);
 
           window_x += 8;
           // ---------------------------------
@@ -376,17 +393,15 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
           // ---------------------------------
           // Load data and convert to floating point
           __m128i data_epu8 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src_current+lx));
-          __m128i data_ep16 = _mm_unpacklo_epi8(data_epu8, zeroi);
-          __m128i data_ep32_l = _mm_unpacklo_epi16(data_ep16, zeroi);
-          __m128i data_ep32_h = _mm_unpackhi_epi16(data_ep16, zeroi);
-          __m256i data_ep32 = _mm256_set_m128i(data_ep32_h, data_ep32_l);
+          __m128i data_ep16 = _mm_unpacklo_epi8(data_epu8, _mm_setzero_si128());
+          __m128i data_ep32l = _mm_unpacklo_epi16(data_ep16, _mm_setzero_si128());
+          __m128i data_ep32h = _mm_unpackhi_epi16(data_ep16, _mm_setzero_si128());
+          __m256  data      = _mm256_cvtepi32_ps(_mm256_set_m128i(data_ep32h, data_ep32l));
           // ---------------------------------
 
           // ---------------------------------
           // Process data
-          __m256 factor_simd = _mm256_load_ps(factor);
-          __m256 data        = _mm256_cvtepi32_ps(data_ep32);
-          __m256 res         = _mm256_mul_ps(data, factor_simd);
+          __m256 res = _mm256_mul_ps(data, factor_simd);
 
           result = _mm256_add_ps(result, res);
           divider = _mm256_add_ps(divider, factor_simd);
@@ -398,19 +413,22 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
       }
 
       // Add to single float at the lower bit
+
       result = _mm256_hadd_ps(result, zero);
       result = _mm256_hadd_ps(result, zero);
 
       divider = _mm256_hadd_ps(divider, zero);
       divider = _mm256_hadd_ps(divider, zero);
 
-      result = _mm256_div_ps(result, divider);
+      __m128 result_128 = _mm_div_ss(
+        _mm256_castps256_ps128(result),
+        _mm256_castps256_ps128(divider)
+      );
 
-      __m128 result_128 = _mm256_castps256_ps128(result);
+      __m128i result_i = _mm_cvtps_epi32(result_128);
+      result_i = _mm_packus_epi16(result_i, _mm_setzero_si128());
 
-      int result_i = _mm_cvtss_si32(result_128);
-
-      dst[x] = clamp(0, result_i, 255);
+      dst[x] = _mm_cvtsi128_si32(result_i);
 
       xpos += x_step;
     }
@@ -421,6 +439,8 @@ static void resize_plane_avx(EWACore* func, BYTE* dst, const BYTE* src, int dst_
   }
 
   _mm256_zeroupper();
+
+#undef zeroi
 }
 #endif
 
