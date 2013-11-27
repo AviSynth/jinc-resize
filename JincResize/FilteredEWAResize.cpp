@@ -1,10 +1,14 @@
 
 #include <math.h>
+#include <stdint.h>
 #include "FilteredEWAResize.h"
 
 // Both ICL and MSVC generates much slower
 // AVX code than SSE
 //#define USE_AVX
+
+// Usually floating point in C code get converted to SSE anyway
+//#define USE_C
 
 // Intrinsics
 #include "smmintrin.h"
@@ -12,6 +16,9 @@
 # include "immintrin.h"
 #endif
 
+#ifdef USE_C
+
+#pragma intel optimization_parameter target_arch=sse
 static void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
                            int src_width, int src_height, int dst_width, int dst_height,
                            double crop_left, double crop_top, double crop_width, double crop_height)
@@ -96,8 +103,9 @@ static void resize_plane_c(EWACore* func, BYTE* dst, const BYTE* src, int dst_pi
   }
 }
 
+#endif
 
-template<int filter_size>
+template<int filter_size, int CPU>
 static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
                              int src_width, int src_height, int dst_width, int dst_height,
                              double crop_left, double crop_top, double crop_width, double crop_height)
@@ -224,11 +232,27 @@ static void resize_plane_sse(EWACore* func, BYTE* dst, const BYTE* src, int dst_
       }
 
       // Add to single float at the lower bit
-      result = _mm_hadd_ps(result, zero);
-      result = _mm_hadd_ps(result, zero);
+      if (CPU == CPUF_SSE3) {
+        result = _mm_hadd_ps(result, zero);
+        result = _mm_hadd_ps(result, zero);
 
-      divider = _mm_hadd_ps(divider, zero);
-      divider = _mm_hadd_ps(divider, zero);
+        divider = _mm_hadd_ps(divider, zero);
+        divider = _mm_hadd_ps(divider, zero);
+      } else {
+        // use 3xshuffle + 2xadd instead of 2xhadd
+        __m128 result1 = result;
+        __m128 result2 = _mm_shuffle_ps(result1, result1, _MM_SHUFFLE(1, 0, 3, 2));
+        __m128 divider1 = divider;
+        __m128 divider2 = _mm_shuffle_ps(divider1, divider1, _MM_SHUFFLE(1, 0, 3, 2));
+
+        result1 = _mm_add_ps(result1, result2);
+        result2 = _mm_shuffle_ps(result1, result1, _MM_SHUFFLE(2, 3, 0, 1));
+        divider1 = _mm_add_ps(divider1, divider2);
+        divider2 = _mm_shuffle_ps(divider1, divider1, _MM_SHUFFLE(2, 3, 0, 1));
+
+        result = _mm_add_ss(result1, result2);
+        divider = _mm_add_ss(divider1, divider2);
+      }
 
       result = _mm_div_ss(result, divider);
 
@@ -475,7 +499,21 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
     switch (int(ceil(func->GetSupport() * 2.0))) {
 
 #define size(n)  \
-    case n: resizer = resize_plane_sse<n>; break;
+    case n: resizer = resize_plane_sse<n, CPUF_SSE3>; break;
+
+      size(3); size(5); size(7); size(9);
+      size(11); size(13); size(15); size(17);
+
+#undef size
+
+    default:
+      env->ThrowError("JincResize: Internal error; filter size not supported");
+    }
+  } else if (env->GetCPUFlags() & CPUF_SSE2) {
+    switch (int(ceil(func->GetSupport() * 2.0))) {
+
+#define size(n)  \
+    case n: resizer = resize_plane_sse<n, CPUF_SSE2>; break;
 
       size(3); size(5); size(7); size(9);
       size(11); size(13); size(15); size(17);
@@ -486,7 +524,11 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
       env->ThrowError("JincResize: Internal error; filter size not supported");
     }
   } else {
+#ifdef USE_C
     resizer = resize_plane_c;
+#else
+    env->ThrowError("JincResize: Require at least SSE2 CPU");
+#endif
   }
 }
 
