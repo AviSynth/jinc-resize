@@ -4,9 +4,9 @@
 #include "FilteredEWAResize.h"
 
 // Both ICL and MSVC generates much slower AVX code than SSE
-#define USE_AVX2
-#define USE_SSE2
-#define USE_SSE3
+//#define USE_AVX2
+//#define USE_SSE2
+//#define USE_SSE3
 // TODO implement above
 
 // Usually floating point in C code get converted to SSE anyway
@@ -194,6 +194,7 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
   }
 #endif
 
+#ifdef USE_SSE3
   if (env->GetCPUFlags() & CPUF_SSE3) {
     switch (filter_size) {
 
@@ -209,7 +210,9 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
       env->ThrowError("JincResize: Internal error; filter size '%d' is not supported.", filter_size);
     }
   }
-  
+#endif
+
+#ifdef USE_SSE2
   if (env->GetCPUFlags() & CPUF_SSE2) {
     switch (filter_size) {
 
@@ -225,6 +228,7 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
       env->ThrowError("JincResize: Internal error; filter size '%d' is not supported.", filter_size);
     }
   }
+#endif
 
 #ifdef USE_C
   return resize_plane_c;
