@@ -348,10 +348,14 @@ static void resize_plane_avx(EWAPixelCoeff* coeff, BYTE* dst, const BYTE* src, i
       __m256i zero = _mm256_setzero_si256();
 
       for (int ly = 0; ly < coeff->filter_size; ly++) {
-        for (int lx = 0; lx < coeff->filter_size; lx += 4) {
+        for (int lx = 0; lx < coeff->filter_size; lx += 8) {
           __m256i src_epu8 = _mm256_castsi128_si256(_mm_loadl_epi64((const __m128i*)(src_ptr+lx)));
           __m256i src_ep16 = _mm256_unpacklo_epi8(src_epu8, zero);
-          __m256i src_ep32 = _mm256_unpacklo_epi16(src_ep16, zero);
+
+          // I don't understand AVX2 at all...
+          __m256i src_ep16_shuffled = _mm256_permute4x64_epi64(src_ep16, _MM_SHUFFLE(3, 1, 2, 0));
+
+          __m256i src_ep32 = _mm256_unpacklo_epi16(src_ep16_shuffled, zero);
 
           __m256 src_ps = _mm256_cvtepi32_ps(src_ep32);
           __m256 coeff = _mm256_load_ps(coeff_ptr + lx);
@@ -372,6 +376,11 @@ static void resize_plane_avx(EWAPixelCoeff* coeff, BYTE* dst, const BYTE* src, i
 
       // Add to single float at the lower bit
       __m256 zero_ps = _mm256_setzero_ps();
+      result = _mm256_hadd_ps(result, zero_ps);
+
+      // I don't understand AVX2 at all...
+      result = _mm256_castpd_ps(_mm256_permute4x64_pd(_mm256_castps_pd(result), _MM_SHUFFLE(3, 1, 2, 0)));
+
       result = _mm256_hadd_ps(result, zero_ps);
       result = _mm256_hadd_ps(result, zero_ps);
 
