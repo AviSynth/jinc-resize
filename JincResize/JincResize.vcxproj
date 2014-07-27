@@ -72,6 +72,7 @@
   <ItemGroup>
     <ClInclude Include="avisynth.h" />
     <ClInclude Include="EWACore.h" />
+    <ClInclude Include="EWAResizer.h" />
     <ClInclude Include="FilteredEWAResize.h" />
     <ClInclude Include="JincFilter.h" />
   </ItemGroup>

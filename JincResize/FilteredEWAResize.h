@@ -2,7 +2,11 @@
 #ifndef __FILTERED_EWA_RESIZE_H
 #define __FILTERED_EWA_RESIZE_H
 
+#pragma warning(push)
+#pragma warning(disable: 4512 4244 4100 693)
 #include "avisynth.h"
+#pragma warning(pop)
+
 #include "EWACore.h"
 
 
@@ -17,8 +21,9 @@ public:
                     double crop_left, double crop_top, double crop_width, double crop_height,
                     EWACore *func, IScriptEnvironment* env);
   ~FilteredEWAResize();
-
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
+
+  static EWAResizeCore GetResizer(int filter_size, IScriptEnvironment* env);
 
 private:
   EWACore *func;
