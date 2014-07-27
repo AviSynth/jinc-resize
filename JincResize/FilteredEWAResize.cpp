@@ -10,7 +10,7 @@
 // TODO implement above
 
 // Usually floating point in C code get converted to SSE anyway
-//#define USE_C
+#define USE_C
 
 #include "EWAResizer.h"
 

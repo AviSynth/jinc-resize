@@ -2,8 +2,13 @@
 #ifndef __EWARESIZE_H
 #define __EWARESIZE_H
 
+#include "cpuid.h"
+
 // Intrinsics
-#include "smmintrin.h"
+#if defined(USE_SSE3) || defined(USE_SSE2)
+# include "smmintrin.h"
+#endif
+
 #ifdef USE_AVX2
 # include "immintrin.h"
 #endif
