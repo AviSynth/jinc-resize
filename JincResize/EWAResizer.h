@@ -10,10 +10,9 @@
 # include "smmintrin.h"
 #endif
 
-#ifdef USE_AVX2
+#if defined(USE_AVX2) || defined(USE_FMA3)
 # include "immintrin.h"
 #endif
-
 
 static void init_coeff_table(EWACore* func, EWAPixelCoeff* out, int quantize_x, int quantize_y,
                              int src_width, int src_height, int dst_width, int dst_height,
@@ -155,6 +154,8 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
       const float quantized_xpos = float(quantized_x_int) / quantize_x;
       const float quantized_ypos = float(quantized_y_int) / quantize_y;
 
+      //if (is_border && x > 500) __asm int 3;
+
       if (!is_border && out->factor_map[quantized_y_value*quantize_x + quantized_x_value] != nullptr) {
         // Not border pixel and already have coefficient calculated at this quantized position
         meta->coeff = out->factor_map[quantized_y_value*quantize_x + quantized_x_value];
@@ -163,8 +164,8 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
 
         // This is the location of current target pixel in source pixel
         // Quantized
-        float current_x = clamp(0.f, quantized_xpos, src_width - 1.f);
-        float current_y = clamp(0.f, quantized_ypos, src_height - 1.f);
+        float current_x = clamp(0.f, is_border ? xpos : quantized_xpos, src_width - 1.f);
+        float current_y = clamp(0.f, is_border ? ypos : quantized_ypos, src_height - 1.f);
 
         // Windowing position
         int window_y = window_begin_y;
@@ -182,7 +183,6 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
 
             float factor = func->GetFactor(dist_sqr);
 
-            //result += src_data * factor;
             curr_factor_ptr[lx] = factor;
             divider += factor;
 
@@ -257,5 +257,136 @@ static void resize_plane_c(EWAPixelCoeff* coeff, BYTE* dst, const BYTE* src, int
     dst += dst_pitch;
   } // for (y)
 }
+
+#if defined(USE_SSE2) || defined(USE_SSE3)
+
+#pragma intel optimization_parameter target_arch=sse2
+template<int filter_size, int CPU>
+static void resize_plane_sse(EWAPixelCoeff* coeff, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
+                           int src_width, int src_height, int dst_width, int dst_height,
+                           double crop_left, double crop_top, double crop_width, double crop_height)
+{
+  EWAPixelCoeffMeta* meta = coeff->meta;
+
+//  assert(fitler_size == coeff->filter_size);
+
+  for (int y = 0; y < dst_height; y++) {
+    for (int x = 0; x < dst_width; x++) {
+      const BYTE* src_ptr = src + (meta->start_y * src_pitch) + meta->start_x;
+      const float* coeff_ptr = meta->coeff;
+      
+      __m128 result = _mm_setzero_ps();
+      __m128i zero = _mm_setzero_si128();
+
+      for (int ly = 0; ly < coeff->filter_size; ly++) {
+        for (int lx = 0; lx < coeff->filter_size; lx += 4) {
+          __m128i src_epu8 = _mm_cvtsi32_si128(*(int*)(src_ptr+lx));
+          __m128i src_ep16 = _mm_unpacklo_epi8(src_epu8, zero);
+          __m128i src_ep32 = _mm_unpacklo_epi16(src_ep16, zero);
+
+          __m128 src_ps = _mm_cvtepi32_ps(src_ep32);
+          __m128 coeff = _mm_load_ps(coeff_ptr + lx);
+
+          __m128 multiplied = _mm_mul_ps(src_ps, coeff);
+          result = _mm_add_ps(result, multiplied);
+        }
+        coeff_ptr += coeff->coeff_stripe;
+        src_ptr += src_pitch;
+      }
+
+#ifdef USE_SSE3
+      // Add to single float at the lower bit
+      if (CPU == EWARESIZE_SSE3) {
+        __m128 zero_ps = _mm_setzero_ps();
+        result = _mm_hadd_ps(result, zero_ps);
+        result = _mm_hadd_ps(result, zero_ps);
+      } else
+#endif
+      {
+        // use 3xshuffle + 2xadd instead of 2xhadd
+        __m128 result1 = result;
+        __m128 result2 = _mm_shuffle_ps(result1, result1, _MM_SHUFFLE(1, 0, 3, 2));
+
+        result1 = _mm_add_ps(result1, result2);
+        result2 = _mm_shuffle_ps(result1, result1, _MM_SHUFFLE(2, 3, 0, 1));
+
+        result = _mm_add_ss(result1, result2);
+      }
+
+      // Convert back to interger + clamp
+      __m128i result_i = _mm_cvtps_epi32(result);
+      result_i = _mm_packus_epi16(result_i, zero);
+
+      // Save data
+      dst[x] = _mm_cvtsi128_si32(result_i);
+
+      meta++;
+    } // for (x)
+    dst += dst_pitch;
+  } // for (y)
+}
+#endif
+
+#ifdef USE_AVX2
+
+#pragma intel optimization_parameter target_arch=avx
+template<int filter_size, int CPU>
+static void resize_plane_avx(EWAPixelCoeff* coeff, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
+                             int src_width, int src_height, int dst_width, int dst_height,
+                             double crop_left, double crop_top, double crop_width, double crop_height)
+{
+  EWAPixelCoeffMeta* meta = coeff->meta;
+
+  //  assert(fitler_size == coeff->filter_size);
+
+  for (int y = 0; y < dst_height; y++) {
+    for (int x = 0; x < dst_width; x++) {
+      const BYTE* src_ptr = src + (meta->start_y * src_pitch) + meta->start_x;
+      const float* coeff_ptr = meta->coeff;
+
+      __m256 result = _mm256_setzero_ps();
+      __m256i zero = _mm256_setzero_si256();
+
+      for (int ly = 0; ly < coeff->filter_size; ly++) {
+        for (int lx = 0; lx < coeff->filter_size; lx += 4) {
+          __m256i src_epu8 = _mm256_castsi128_si256(_mm_loadl_epi64((const __m128i*)(src_ptr+lx)));
+          __m256i src_ep16 = _mm256_unpacklo_epi8(src_epu8, zero);
+          __m256i src_ep32 = _mm256_unpacklo_epi16(src_ep16, zero);
+
+          __m256 src_ps = _mm256_cvtepi32_ps(src_ep32);
+          __m256 coeff = _mm256_load_ps(coeff_ptr + lx);
+
+#ifdef USE_FMA3
+          if (CPU == EWARESIZE_FMA3 | EWARESIZE_AVX2) {
+            result = _mm256_fmadd_ps(src_ps, coeff, result);
+          } else
+#endif
+          {
+            __m256 multiplied = _mm256_mul_ps(src_ps, coeff);
+            result = _mm256_add_ps(result, multiplied);
+          }
+        }
+        coeff_ptr += coeff->coeff_stripe;
+        src_ptr += src_pitch;
+      }
+
+      // Add to single float at the lower bit
+      __m256 zero_ps = _mm256_setzero_ps();
+      result = _mm256_hadd_ps(result, zero_ps);
+      result = _mm256_hadd_ps(result, zero_ps);
+
+      // Convert back to interger + clamp
+      __m256i result_i = _mm256_cvtps_epi32(result);
+      result_i = _mm256_packus_epi16(result_i, zero);
+
+      // Save data
+      dst[x] = _mm_cvtsi128_si32(_mm256_castsi256_si128(result_i));
+
+      meta++;
+    } // for (x)
+    dst += dst_pitch;
+  } // for (y)
+}
+#endif
 
 #endif // Include guard

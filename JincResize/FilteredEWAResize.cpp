@@ -3,14 +3,12 @@
 #include <stdint.h>
 #include "FilteredEWAResize.h"
 
-// Both ICL and MSVC generates much slower AVX code than SSE
-//#define USE_AVX2
-//#define USE_SSE2
-//#define USE_SSE3
-// TODO implement above
-
-// Usually floating point in C code get converted to SSE anyway
+// Features
 #define USE_C
+#define USE_SSE2
+#define USE_SSE3
+#define USE_AVX2
+#define USE_FMA3
 
 #include "EWAResizer.h"
 
@@ -61,7 +59,10 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
   if (version) {
     // Show instruction set it compiles with
     env->ThrowError(
-      "[Jinc Resizer] Supported Instruction Set: "
+      "[Jinc Resizer] [%d] Compiled Instruction Set: "
+# ifdef USE_FMA3
+      "FMA3 "
+# endif
 # ifdef USE_AVX2
       "AVX2 "
 # endif
@@ -74,7 +75,7 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
 # ifdef USE_C
       "x86"
 # endif
-      );
+      , get_supported_instruction());
   }
 
   if (!vi.IsPlanar() || !vi.IsYUV()) {
@@ -176,15 +177,35 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
 
 EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment* env)
 {
-#ifdef USE_AVX2
-  if (env->GetCPUFlags() & CPUF_AVX) {
+  int CPU = get_supported_instruction();
+
+#if defined(USE_FMA3) && defined(USE_FMA3)
+  if ((CPU & EWARESIZE_AVX2) && (CPU & EWARESIZE_FMA3)) {
     switch (filter_size) {
 
 #define size(n)  \
-    case n: return resize_plane_avx<n>; break;
+    case n: return resize_plane_avx<n, EWARESIZE_AVX2 | EWARESIZE_FMA3>; break;
 
-      //size(3); size(5); size(7); size(9);
-      //size(11); size(13); size(15); size(17);
+      size(3); size(5); size(7); size(9);
+      size(11); size(13); size(15); size(17);
+
+#undef size
+
+    default:
+      env->ThrowError("JincResize: Internal error; filter size '%d' is not supported.", filter_size);
+    }
+  }
+#endif
+
+#ifdef USE_AVX2
+  if (CPU & EWARESIZE_AVX2) {
+    switch (filter_size) {
+
+#define size(n)  \
+    case n: return resize_plane_avx<n, EWARESIZE_AVX2>; break;
+
+      size(3); size(5); size(7); size(9);
+      size(11); size(13); size(15); size(17);
 
 #undef size
 
@@ -195,14 +216,14 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #endif
 
 #ifdef USE_SSE3
-  if (env->GetCPUFlags() & CPUF_SSE3) {
+  if (CPU & EWARESIZE_SSE3) {
     switch (filter_size) {
 
 #define size(n)  \
-    case n: return resize_plane_sse<n, CPUF_SSE3>; break;
+    case n: return resize_plane_sse<n, EWARESIZE_SSE3>; break;
 
-      //size(3); size(5); size(7); size(9);
-      //size(11); size(13); size(15); size(17);
+      size(3); size(5); size(7); size(9);
+      size(11); size(13); size(15); size(17);
 
 #undef size
 
@@ -213,14 +234,14 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #endif
 
 #ifdef USE_SSE2
-  if (env->GetCPUFlags() & CPUF_SSE2) {
+  if (CPU & EWARESIZE_SSE2) {
     switch (filter_size) {
 
 #define size(n)  \
-    case n: return resize_plane_sse<n, CPUF_SSE2>; break;
+    case n: return resize_plane_sse<n, EWARESIZE_SSE2>; break;
 
-      //size(3); size(5); size(7); size(9);
-      //size(11); size(13); size(15); size(17);
+      size(3); size(5); size(7); size(9);
+      size(11); size(13); size(15); size(17);
 
 #undef size
 
