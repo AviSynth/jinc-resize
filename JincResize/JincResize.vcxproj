@@ -60,7 +60,7 @@
       <InterproceduralOptimization>NoIPO</InterproceduralOptimization>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
+      <EnableEnhancedInstructionSet>StreamingSIMDExtensions</EnableEnhancedInstructionSet>
       <Optimization>MaxSpeedHighLevel</Optimization>
     </ClCompile>
     <Link>
