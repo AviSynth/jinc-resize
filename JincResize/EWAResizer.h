@@ -149,8 +149,8 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
       meta->start_y = window_begin_y;
 
       // Quantize xpos and ypos
-      const int64_t quantized_x_int = int64_t(xpos * quantize_x + 0.5f);
-      const int64_t quantized_y_int = int64_t(ypos * quantize_y + 0.5f);
+      const int quantized_x_int = int(xpos * quantize_x + 0.5f);
+      const int quantized_y_int = int(ypos * quantize_y + 0.5f);
       const int quantized_x_value = quantized_x_int % quantize_x;
       const int quantized_y_value = quantized_y_int % quantize_y;
       const float quantized_xpos = float(quantized_x_int) / quantize_x;

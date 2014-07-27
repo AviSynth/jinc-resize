@@ -19,7 +19,7 @@ class FilteredEWAResize : public GenericVideoFilter
 public:
   FilteredEWAResize(PClip _child, int width, int height,
                     double crop_left, double crop_top, double crop_width, double crop_height,
-                    EWACore *func, IScriptEnvironment* env);
+                    int quant_x, int quant_y, bool version, EWACore *func, IScriptEnvironment* env);
   ~FilteredEWAResize();
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env);
 

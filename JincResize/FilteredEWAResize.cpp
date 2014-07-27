@@ -51,12 +51,32 @@ inline float EWACore::GetFactor(float dist)
 /* FilteredEWAResize implementation                                     */
 /************************************************************************/
 
-FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height, EWACore *func, IScriptEnvironment* env) :
+FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height,
+                                     int quant_x, int quant_y, bool version, EWACore *func, IScriptEnvironment* env) :
   GenericVideoFilter(_child),
   func(func),
   crop_left(crop_left), crop_top(crop_top), crop_width(crop_width), crop_height(crop_height),
   stored_coeff_u(nullptr), stored_coeff_v(nullptr), stored_coeff_y(nullptr)
 {
+  if (version) {
+    // Show instruction set it compiles with
+    env->ThrowError(
+      "[Jinc Resizer] Supported Instruction Set: "
+# ifdef USE_AVX2
+      "AVX2 "
+# endif
+# ifdef USE_SSE3
+      "SSE3 "
+# endif
+# ifdef USE_SSE2
+      "SSE2 "
+# endif
+# ifdef USE_C
+      "x86"
+# endif
+      );
+  }
+
   if (!vi.IsPlanar() || !vi.IsYUV()) {
     env->ThrowError("JincResize: Only planar YUV colorspaces are supported");
   }
@@ -82,7 +102,7 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
 
   // Generate resizing core
   stored_coeff_y = new EWAPixelCoeff;
-  generate_coeff_table_c(func, stored_coeff_y, 256, 256, width, height, vi.width, vi.height, crop_left, crop_top, crop_width, crop_height);
+  generate_coeff_table_c(func, stored_coeff_y, quant_x, quant_y, width, height, vi.width, vi.height, crop_left, crop_top, crop_width, crop_height);
 
   if (!vi.IsY8()) {
     int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
@@ -92,12 +112,12 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
     double div_h = 1 << subsample_h;
 
     stored_coeff_u = new EWAPixelCoeff;
-    generate_coeff_table_c(func, stored_coeff_u, 256, 256,
+    generate_coeff_table_c(func, stored_coeff_u, quant_x, quant_y,
                            src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
                            crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h);
 
     stored_coeff_v = new EWAPixelCoeff;
-    generate_coeff_table_c(func, stored_coeff_v, 256, 256,
+    generate_coeff_table_c(func, stored_coeff_v, quant_x, quant_y,
                            src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
                            crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h);
   }
@@ -143,7 +163,7 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
       crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
       );
 
-    resizer(stored_coeff_y,
+    resizer(stored_coeff_v,
       dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
       src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
       crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
