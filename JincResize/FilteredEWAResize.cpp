@@ -103,7 +103,7 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
 
   // Generate resizing core
   stored_coeff_y = new EWAPixelCoeff;
-  generate_coeff_table_c(func, stored_coeff_y, quant_x, quant_y, width, height, vi.width, vi.height, crop_left, crop_top, crop_width, crop_height);
+  generate_coeff_table_c(func, stored_coeff_y, quant_x, quant_y, src_width, src_height, vi.width, vi.height, crop_left, crop_top, crop_width, crop_height);
 
   if (!vi.IsY8()) {
     int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
