@@ -154,8 +154,6 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
       const float quantized_xpos = float(quantized_x_int) / quantize_x;
       const float quantized_ypos = float(quantized_y_int) / quantize_y;
 
-      //if (is_border && x > 500) __asm int 3;
-
       if (!is_border && out->factor_map[quantized_y_value*quantize_x + quantized_x_value] != nullptr) {
         // Not border pixel and already have coefficient calculated at this quantized position
         meta->coeff = out->factor_map[quantized_y_value*quantize_x + quantized_x_value];
