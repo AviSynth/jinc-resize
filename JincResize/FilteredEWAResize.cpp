@@ -47,10 +47,15 @@ inline float EWACore::GetFactor(float dist)
   return lut[index];
 }
 
+/************************************************************************/
+/* FilteredEWAResize implementation                                     */
+/************************************************************************/
+
 FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double crop_left, double crop_top, double crop_width, double crop_height, EWACore *func, IScriptEnvironment* env) :
   GenericVideoFilter(_child),
   func(func),
-  crop_left(crop_left), crop_top(crop_top), crop_width(crop_width), crop_height(crop_height)
+  crop_left(crop_left), crop_top(crop_top), crop_width(crop_width), crop_height(crop_height),
+  stored_coeff_u(nullptr), stored_coeff_v(nullptr), stored_coeff_y(nullptr)
 {
   if (!vi.IsPlanar() || !vi.IsYUV()) {
     env->ThrowError("JincResize: Only planar YUV colorspaces are supported");
@@ -74,12 +79,43 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
 
   // Select the EWA Resize core
   resizer = GetResizer(int(ceil(func->GetSupport() * 2.0)), env);
+
+  // Generate resizing core
+  stored_coeff_y = new EWAPixelCoeff;
+  generate_coeff_table_c(func, stored_coeff_y, 256, 256, width, height, vi.width, vi.height, crop_left, crop_top, crop_width, crop_height);
+
+  if (!vi.IsY8()) {
+    int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
+    int subsample_h = vi.GetPlaneHeightSubsampling(PLANAR_U);
+
+    double div_w = 1 << subsample_w;
+    double div_h = 1 << subsample_h;
+
+    stored_coeff_u = new EWAPixelCoeff;
+    generate_coeff_table_c(func, stored_coeff_u, 256, 256,
+                           src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+                           crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h);
+
+    stored_coeff_v = new EWAPixelCoeff;
+    generate_coeff_table_c(func, stored_coeff_v, 256, 256,
+                           src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+                           crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h);
+  }
+
 }
 
 FilteredEWAResize::~FilteredEWAResize()
 {
   func->DestroyLutTable();
   delete func;
+
+  delete_coeff_table(stored_coeff_y);
+  delete_coeff_table(stored_coeff_u);
+  delete_coeff_table(stored_coeff_v);
+
+  delete stored_coeff_y;
+  delete stored_coeff_u;
+  delete stored_coeff_v;
 }
 
 PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env)
@@ -89,11 +125,18 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
 
   try {
     // Luma
+    /*
     resizer(func,
       dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
       src_width, src_height, vi.width, vi.height,
       crop_left, crop_top, crop_width, crop_height
       );
+      */
+
+    resize_plane_c_table(stored_coeff_y,
+                         dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
+                         src_width, src_height, vi.width, vi.height,
+                         crop_left, crop_top, crop_width, crop_height);
 
     if (!vi.IsY8()) {
       int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
@@ -101,7 +144,7 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
 
       double div_w = 1 << subsample_w;
       double div_h = 1 << subsample_h;
-
+      /*
       resizer(func,
         dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
         src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
@@ -113,7 +156,18 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
         src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
         crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
         );
+        */
+      resize_plane_c_table(stored_coeff_u,
+              dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
+              src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+              crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
+              );
 
+      resize_plane_c_table(stored_coeff_v,
+              dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
+              src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+              crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
+              );
     }
   } catch (int err) {
     env->ThrowError("JincResize: Internal error, code=", err);

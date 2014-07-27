@@ -71,12 +71,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="avisynth.h" />
+    <ClInclude Include="cpuid.h" />
     <ClInclude Include="EWACore.h" />
     <ClInclude Include="EWAResizer.h" />
+    <ClInclude Include="EWAResizerStruct.h" />
     <ClInclude Include="FilteredEWAResize.h" />
     <ClInclude Include="JincFilter.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="cpuid.cpp" />
     <ClCompile Include="FilteredEWAResize.cpp" />
     <ClCompile Include="JincFilter.cpp" />
     <ClCompile Include="AvisynthEntry.cpp" />

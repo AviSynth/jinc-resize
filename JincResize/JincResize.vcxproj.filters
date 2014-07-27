@@ -30,6 +30,12 @@
     <ClInclude Include="EWAResizer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="cpuid.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="EWAResizerStruct.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FilteredEWAResize.cpp">
@@ -39,6 +45,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="JincFilter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cpuid.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

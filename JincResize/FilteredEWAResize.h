@@ -8,7 +8,7 @@
 #pragma warning(pop)
 
 #include "EWACore.h"
-
+#include "EWAResizerStruct.h"
 
 typedef void (*EWAResizeCore)(EWACore* func, BYTE* dst, const BYTE* src, int dst_pitch, int src_pitch,
                               int src_width, int src_height, int dst_width, int dst_height,
@@ -31,6 +31,8 @@ private:
 
   int src_width, src_height;
   double crop_left, crop_top, crop_width, crop_height;
+
+  EWAPixelCoeff *stored_coeff_y, *stored_coeff_u, *stored_coeff_v;
 };
 
 #endif
