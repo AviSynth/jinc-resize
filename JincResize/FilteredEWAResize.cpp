@@ -122,55 +122,32 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
 {
   PVideoFrame src = child->GetFrame(n, env);
   PVideoFrame dst = env->NewVideoFrame(vi);
+    
+  resizer(stored_coeff_y,
+    dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
+    src_width, src_height, vi.width, vi.height,
+    crop_left, crop_top, crop_width, crop_height
+    );
+      
 
-  try {
-    // Luma
-    /*
-    resizer(func,
-      dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
-      src_width, src_height, vi.width, vi.height,
-      crop_left, crop_top, crop_width, crop_height
+  if (!vi.IsY8()) {
+    int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
+    int subsample_h = vi.GetPlaneHeightSubsampling(PLANAR_U);
+
+    double div_w = 1 << subsample_w;
+    double div_h = 1 << subsample_h;
+      
+    resizer(stored_coeff_u,
+      dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
+      src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+      crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
       );
-      */
 
-    resize_plane_c_table(stored_coeff_y,
-                         dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
-                         src_width, src_height, vi.width, vi.height,
-                         crop_left, crop_top, crop_width, crop_height);
-
-    if (!vi.IsY8()) {
-      int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
-      int subsample_h = vi.GetPlaneHeightSubsampling(PLANAR_U);
-
-      double div_w = 1 << subsample_w;
-      double div_h = 1 << subsample_h;
-      /*
-      resizer(func,
-        dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
-        src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
-        crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
-        );
-
-      resizer(func,
-        dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
-        src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
-        crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
-        );
-        */
-      resize_plane_c_table(stored_coeff_u,
-              dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
-              src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
-              crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
-              );
-
-      resize_plane_c_table(stored_coeff_v,
-              dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
-              src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
-              crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
-              );
-    }
-  } catch (int err) {
-    env->ThrowError("JincResize: Internal error, code=", err);
+    resizer(stored_coeff_y,
+      dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
+      src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
+      crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
+      );
   }
 
   return dst;
@@ -186,13 +163,13 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #define size(n)  \
     case n: return resize_plane_avx<n>; break;
 
-      size(3); size(5); size(7); size(9);
-      size(11); size(13); size(15); size(17);
+      //size(3); size(5); size(7); size(9);
+      //size(11); size(13); size(15); size(17);
 
 #undef size
 
     default:
-      env->ThrowError("JincResize: Internal error; filter size '%d' is not supported", filter_size);
+      env->ThrowError("JincResize: Internal error; filter size '%d' is not supported.", filter_size);
     }
   }
 #endif
@@ -203,13 +180,13 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #define size(n)  \
     case n: return resize_plane_sse<n, CPUF_SSE3>; break;
 
-      size(3); size(5); size(7); size(9);
-      size(11); size(13); size(15); size(17);
+      //size(3); size(5); size(7); size(9);
+      //size(11); size(13); size(15); size(17);
 
 #undef size
 
     default:
-      env->ThrowError("JincResize: Internal error; filter size '%d' is not supported", filter_size);
+      env->ThrowError("JincResize: Internal error; filter size '%d' is not supported.", filter_size);
     }
   }
   
@@ -219,13 +196,13 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #define size(n)  \
     case n: return resize_plane_sse<n, CPUF_SSE2>; break;
 
-      size(3); size(5); size(7); size(9);
-      size(11); size(13); size(15); size(17);
+      //size(3); size(5); size(7); size(9);
+      //size(11); size(13); size(15); size(17);
 
 #undef size
 
     default:
-      env->ThrowError("JincResize: Internal error; filter size '%d' is not supported", filter_size);
+      env->ThrowError("JincResize: Internal error; filter size '%d' is not supported.", filter_size);
     }
   }
 
