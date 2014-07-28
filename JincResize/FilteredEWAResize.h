@@ -27,7 +27,7 @@ public:
 
 private:
   EWACore *func;
-  EWAResizeCore resizer;
+  EWAResizeCore resizer_y, resizer_u, resizer_v;
 
   int src_width, src_height;
   double crop_left, crop_top, crop_width, crop_height;

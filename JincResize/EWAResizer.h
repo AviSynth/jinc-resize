@@ -18,8 +18,20 @@ static void init_coeff_table(EWACore* func, EWAPixelCoeff* out, int quantize_x, 
                              int src_width, int src_height, int dst_width, int dst_height,
                              double crop_left, double crop_top, double crop_width, double crop_height)
 {
-  const float filter_support = func->GetSupport();
-  const int filter_size = (int) ceil(filter_support * 2.0);
+  const double filter_scale_x = double(dst_width) / crop_width;
+  const double filter_scale_y = double(dst_height) / crop_height;
+
+  const double filter_step_x = min(filter_scale_x, 1.0);
+  const double filter_step_y = min(filter_scale_y, 1.0);
+
+  const float filter_support_x = func->GetSupport() / filter_step_x;
+  const float filter_support_y = func->GetSupport() / filter_step_y;
+
+  const int filter_size_x = (int) ceil(filter_support_x * 2.0);
+  const int filter_size_y = (int) ceil(filter_support_y * 2.0);
+
+  const float filter_support = max(filter_support_x, filter_support_y);
+  const int filter_size = max(filter_size_x, filter_size_y);
 
   out->filter_size = filter_size;
   out->quantize_x = quantize_x;
@@ -88,8 +100,20 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
                                    int src_width, int src_height, int dst_width, int dst_height,
                                    double crop_left, double crop_top, double crop_width, double crop_height)
 {
-  const float filter_support = func->GetSupport();
-  const int filter_size = (int) ceil(filter_support * 2.0);
+  const double filter_scale_x = double(dst_width) / crop_width;
+  const double filter_scale_y = double(dst_height) / crop_height;
+
+  const double filter_step_x = min(filter_scale_x, 1.0);
+  const double filter_step_y = min(filter_scale_y, 1.0);
+
+  const float filter_support_x = func->GetSupport() / filter_step_x;
+  const float filter_support_y = func->GetSupport() / filter_step_y;
+
+  const int filter_size_x = (int) ceil(filter_support_x * 2.0);
+  const int filter_size_y = (int) ceil(filter_support_y * 2.0);
+
+  const float filter_support = max(filter_support_x, filter_support_y);
+  const int filter_size = max(filter_size_x, filter_size_y);
 
   const float start_x = (float) (crop_left + (crop_width - dst_width) / (dst_width * 2));
   const float start_y = (float) (crop_top + (crop_height - dst_height) / (dst_height * 2));
@@ -181,9 +205,9 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
         for (int ly = 0; ly < filter_size; ly++) {
           for (int lx = 0; lx < filter_size; lx++) {
             // Euclidean distance to sampling pixel
-            float dx = (current_x - window_x)*(current_x - window_x);
-            float dy = (current_y - window_y)*(current_y - window_y);
-            float dist_sqr = dx + dy;
+            const float dx = (current_x - window_x) * filter_step_x;
+            const float dy = (current_y - window_y) * filter_step_y;
+            const float dist_sqr = dx*dx + dy*dy;
 
             float factor = func->GetFactor(dist_sqr);
 

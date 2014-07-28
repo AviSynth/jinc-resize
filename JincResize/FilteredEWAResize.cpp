@@ -82,10 +82,6 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
     env->ThrowError("JincResize: Only planar YUV colorspaces are supported");
   }
 
-  if (width < vi.width || height < vi.height) {
-    env->ThrowError("JincResize: java.lang.NotImplementedException");
-  }
-
   if (vi.width < int(ceil(2*func->GetSupport())) || vi.height < int(ceil(2*func->GetSupport()))) {
     env->ThrowError("JincResize: Source image too small.");
   }
@@ -98,12 +94,12 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
 
   func->InitLutTable();
 
-  // Select the EWA Resize core
-  resizer = GetResizer(int(ceil(func->GetSupport() * 2.0)), env);
-
   // Generate resizing core
   stored_coeff_y = new EWAPixelCoeff;
   generate_coeff_table_c(func, stored_coeff_y, quant_x, quant_y, src_width, src_height, vi.width, vi.height, crop_left, crop_top, crop_width, crop_height);
+
+  // Select the EWA Resize core
+  resizer_y = GetResizer(stored_coeff_y->filter_size, env);
 
   if (!vi.IsY8()) {
     int subsample_w = vi.GetPlaneWidthSubsampling(PLANAR_U);
@@ -121,6 +117,9 @@ FilteredEWAResize::FilteredEWAResize(PClip _child, int width, int height, double
     generate_coeff_table_c(func, stored_coeff_v, quant_x, quant_y,
                            src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
                            crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h);
+
+    resizer_u = GetResizer(stored_coeff_u->filter_size, env);
+    resizer_v = GetResizer(stored_coeff_v->filter_size, env);
   }
 
 }
@@ -144,7 +143,7 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
   PVideoFrame src = child->GetFrame(n, env);
   PVideoFrame dst = env->NewVideoFrame(vi);
     
-  resizer(stored_coeff_y,
+  resizer_y(stored_coeff_y,
     dst->GetWritePtr(), src->GetReadPtr(), dst->GetPitch(), src->GetPitch(),
     src_width, src_height, vi.width, vi.height,
     crop_left, crop_top, crop_width, crop_height
@@ -158,13 +157,13 @@ PVideoFrame __stdcall FilteredEWAResize::GetFrame(int n, IScriptEnvironment* env
     double div_w = 1 << subsample_w;
     double div_h = 1 << subsample_h;
       
-    resizer(stored_coeff_u,
+    resizer_u(stored_coeff_u,
       dst->GetWritePtr(PLANAR_U), src->GetReadPtr(PLANAR_U), dst->GetPitch(PLANAR_U), src->GetPitch(PLANAR_U),
       src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
       crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
       );
 
-    resizer(stored_coeff_v,
+    resizer_v(stored_coeff_v,
       dst->GetWritePtr(PLANAR_V), src->GetReadPtr(PLANAR_V), dst->GetPitch(PLANAR_V), src->GetPitch(PLANAR_V),
       src_width >> subsample_w, src_height >> subsample_h, vi.width >> subsample_w, vi.height >> subsample_h,
       crop_left / div_w, crop_top / div_h, crop_width / div_w, crop_height / div_h
@@ -186,8 +185,10 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #define size(n)  \
     case n: return resize_plane_avx<n, EWARESIZE_AVX2 | EWARESIZE_FMA3>; break;
 
-      size(3); size(5); size(7); size(9);
-      size(11); size(13); size(15); size(17);
+      size(3); size(4); size(5);
+      size(6); size(7); size(8); size(9); size(10);
+      size(11); size(12); size(13); size(14); size(15);
+      size(16); size(17); size(18); size(19); size(20);
 
 #undef size
 
@@ -204,8 +205,10 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #define size(n)  \
     case n: return resize_plane_avx<n, EWARESIZE_AVX2>; break;
 
-      size(3); size(5); size(7); size(9);
-      size(11); size(13); size(15); size(17);
+      size(3); size(4); size(5);
+      size(6); size(7); size(8); size(9); size(10);
+      size(11); size(12); size(13); size(14); size(15);
+      size(16); size(17); size(18); size(19); size(20);
 
 #undef size
 
@@ -222,8 +225,10 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #define size(n)  \
     case n: return resize_plane_sse<n, EWARESIZE_SSE3>; break;
 
-      size(3); size(5); size(7); size(9);
-      size(11); size(13); size(15); size(17);
+      size(3); size(4); size(5);
+      size(6); size(7); size(8); size(9); size(10);
+      size(11); size(12); size(13); size(14); size(15);
+      size(16); size(17); size(18); size(19); size(20);
 
 #undef size
 
@@ -240,8 +245,10 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #define size(n)  \
     case n: return resize_plane_sse<n, EWARESIZE_SSE2>; break;
 
-      size(3); size(5); size(7); size(9);
-      size(11); size(13); size(15); size(17);
+      size(3); size(4); size(5);
+      size(6); size(7); size(8); size(9); size(10);
+      size(11); size(12); size(13); size(14); size(15);
+      size(16); size(17); size(18); size(19); size(20);
 
 #undef size
 
@@ -254,7 +261,7 @@ EWAResizeCore FilteredEWAResize::GetResizer(int filter_size, IScriptEnvironment*
 #ifdef USE_C
   return resize_plane_c;
 #else
-  env->ThrowError("JincResize: No support instruction set found. Supported: "
+  env->ThrowError("JincResize: No supported instruction set found. Supported: "
 # ifdef USE_AVX2
                   "AVX2, "
 # endif
