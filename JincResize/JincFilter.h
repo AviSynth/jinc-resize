@@ -8,6 +8,7 @@ class JincFilter : public EWACore
 {
 public:
   JincFilter(int taps);
+  ~JincFilter() {}
   float GetSupport() { return support; }
 
 protected:

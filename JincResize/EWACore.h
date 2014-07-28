@@ -15,6 +15,7 @@ class EWACore
 {
 public:
   virtual float GetSupport() = 0;
+  virtual ~EWACore() {};
   float GetFactor(float dist);
   void InitLutTable();
   void DestroyLutTable();
