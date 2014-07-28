@@ -49,16 +49,6 @@ static void init_coeff_table(EWACore* func, EWAPixelCoeff* out, int quantize_x, 
   else
     out->factor_map = nullptr;
 
-  // Calculate how many pixel do we need to calculate pixel for
-
-  const float x_step = (float) (crop_width / dst_width);
-  const float y_step = (float) (crop_height / dst_height);
-
-  // Calculate number of border pixels
-  int total_coeff = 0;
-
-  const int coeff_per_pixel = out->coeff_stripe * filter_size;
-
   // This will be reserved to exact size in coff generating procedure
   out->factor = nullptr;
 
@@ -83,7 +73,7 @@ static void delete_coeff_table(EWAPixelCoeff* out) {
 /************************************************************************/
 
 #pragma intel optimization_parameter target_arch=sse
-static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quantize_x, int quantize_y,
+static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, const int quantize_x, const int quantize_y,
                                    int src_width, int src_height, int dst_width, int dst_height,
                                    double crop_left, double crop_top, double crop_width, double crop_height)
 {
@@ -121,7 +111,7 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
   // Use to advance the coeff pointer
   const int coeff_per_pixel = out->coeff_stripe * filter_size;
 
-  bool is_quantizing = (quantize_x * quantize_y) > 0;
+  const bool is_quantizing = (quantize_x * quantize_y) > 0;
 
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
@@ -176,8 +166,8 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
 
         // This is the location of current target pixel in source pixel
         // Quantized
-        float current_x = clamp(0.f, is_border ? xpos : quantized_xpos, src_width - 1.f);
-        float current_y = clamp(0.f, is_border ? ypos : quantized_ypos, src_height - 1.f);
+        const float current_x = clamp(0.f, is_border ? xpos : quantized_xpos, src_width - 1.f);
+        const float current_y = clamp(0.f, is_border ? ypos : quantized_ypos, src_height - 1.f);
 
         if (!is_border) {
           // Change window position to quantized position
@@ -200,7 +190,7 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
             const float dy = (current_y - window_y) * filter_step_y;
             const float dist_sqr = dx*dx + dy*dy;
 
-            float factor = func->GetFactor(dist_sqr);
+            const float factor = func->GetFactor(dist_sqr);
 
             tmp_array[curr_factor_ptr + lx] = factor;
             divider += factor;
@@ -242,7 +232,7 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
   } // for (ypos)
 
   // Copy from tmp_array to real array
-  int tmp_array_size = tmp_array.size();
+  const int tmp_array_size = tmp_array.size();
   out->factor = (float*) _aligned_malloc(tmp_array_size * sizeof(float), 64); // aligned to cache line
   memcpy(out->factor, &tmp_array[0], tmp_array_size * sizeof(float));
 }
