@@ -2,6 +2,8 @@
 #ifndef __EWARESIZE_H
 #define __EWARESIZE_H
 
+#include <vector>
+
 #include "cpuid.h"
 #include "EWAResizerStruct.h"
 
@@ -43,7 +45,7 @@ static void init_coeff_table(EWACore* func, EWAPixelCoeff* out, int quantize_x, 
 
   // Alocate factor map
   if (quantize_x*quantize_y > 0)
-    out->factor_map = new float*[quantize_x*quantize_y];
+    out->factor_map = new int[quantize_x*quantize_y];
   else
     out->factor_map = nullptr;
 
@@ -56,29 +58,14 @@ static void init_coeff_table(EWACore* func, EWAPixelCoeff* out, int quantize_x, 
   int total_coeff = 0;
 
   const int coeff_per_pixel = out->coeff_stripe * filter_size;
-  
-  if (quantize_x*quantize_y > 0) {
-    const int border_size_x = int(ceil(ceil(filter_support) / x_step));
-    const int border_size_y = int(ceil(ceil(filter_support) / y_step));
 
-    int border_count = 0;
-    border_count += (2 * border_size_x) * dst_height;
-    border_count += (2 * border_size_y) * (dst_width - 2 * border_size_x);
-
-    const int pixel_count = border_count + quantize_x*quantize_y;
-
-    total_coeff = pixel_count * coeff_per_pixel;
-  } else {
-    total_coeff = dst_width * dst_height * coeff_per_pixel;
-  }
-
-  out->factor = (float*) _aligned_malloc(total_coeff * sizeof(float), 64); // align to cache line
+  // This will be reserved to exact size in coff generating procedure
+  out->factor = nullptr;
 
   // Zeroed memory
-  memset(out->factor, 0, total_coeff * sizeof(float));
-  if (quantize_x*quantize_y > 0)
-    memset(out->factor_map, 0, quantize_x*quantize_y * sizeof(float*));
-  memset(out->meta, 0, dst_width * dst_height);
+  if (out->factor_map != nullptr)
+    memset(out->factor_map, 0, quantize_x*quantize_y * sizeof(int));
+  memset(out->meta, 0, dst_width * dst_height * sizeof(EWAPixelCoeffMeta));
 }
 
 static void delete_coeff_table(EWAPixelCoeff* out) {
@@ -126,7 +113,10 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
 
   // Initialize EWAPixelCoeff data structure
   init_coeff_table(func, out, quantize_x, quantize_y, src_width, src_height, dst_width, dst_height, crop_left, crop_top, crop_width, crop_height);
-  float* coeff_pointer = out->factor;
+  //float* coeff_pointer = out->factor;
+
+  std::vector<float> tmp_array;
+  int tmp_array_top = 0;
 
   // Use to advance the coeff pointer
   const int coeff_per_pixel = out->coeff_stripe * filter_size;
@@ -178,9 +168,9 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
       const float quantized_xpos = float(quantized_x_int) / quantize_x;
       const float quantized_ypos = float(quantized_y_int) / quantize_y;
 
-      if (!is_border && out->factor_map[quantized_y_value*quantize_x + quantized_x_value] != nullptr) {
+      if (!is_border && out->factor_map[quantized_y_value*quantize_x + quantized_x_value] != 0) {
         // Not border pixel and already have coefficient calculated at this quantized position
-        meta->coeff = out->factor_map[quantized_y_value*quantize_x + quantized_x_value];
+        meta->coeff = out->factor_map[quantized_y_value*quantize_x + quantized_x_value] - 1;
       } else { // then need computation
         float divider = 0.0;
 
@@ -200,7 +190,8 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
         int window_x = window_begin_x;
 
         // First loop calculate coeff
-        float* curr_factor_ptr = coeff_pointer;
+        tmp_array.resize(tmp_array.size() + coeff_per_pixel, 0.f);
+        int curr_factor_ptr = tmp_array_top;
 
         for (int ly = 0; ly < filter_size; ly++) {
           for (int lx = 0; lx < filter_size; lx++) {
@@ -211,7 +202,7 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
 
             float factor = func->GetFactor(dist_sqr);
 
-            curr_factor_ptr[lx] = factor;
+            tmp_array[curr_factor_ptr + lx] = factor;
             divider += factor;
 
             window_x++;
@@ -224,10 +215,10 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
         } // for (ly)
 
         // Second loop to divide the coeff
-        curr_factor_ptr = coeff_pointer;
+        curr_factor_ptr = tmp_array_top;
         for (int ly = 0; ly < filter_size; ly++) {
           for (int lx = 0; lx < filter_size; lx++) {
-            curr_factor_ptr[lx] /= divider;
+            tmp_array[curr_factor_ptr + lx] /= divider;
           }
 
           curr_factor_ptr += out->coeff_stripe;
@@ -235,11 +226,11 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
 
         if (!is_border) {
           // Save factor to table
-          out->factor_map[quantized_y_value*quantize_x + quantized_x_value] = coeff_pointer;
+          out->factor_map[quantized_y_value*quantize_x + quantized_x_value] = tmp_array_top + 1;
         }
 
-        meta->coeff = coeff_pointer;
-        coeff_pointer += coeff_per_pixel;
+        meta->coeff = tmp_array_top;
+        tmp_array_top += coeff_per_pixel;
 
       } // if (need_compute)
 
@@ -249,6 +240,11 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
     ypos += y_step;
     xpos = start_x;
   } // for (ypos)
+
+  // Copy from tmp_array to real array
+  int tmp_array_size = tmp_array.size();
+  out->factor = (float*) _aligned_malloc(tmp_array_size * sizeof(float), 64); // aligned to cache line
+  memcpy(out->factor, &tmp_array[0], tmp_array_size * sizeof(float));
 }
 
 
@@ -266,7 +262,7 @@ static void resize_plane_c(EWAPixelCoeff* coeff, BYTE* dst, const BYTE* src, int
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
       const BYTE* src_ptr = src + (meta->start_y * src_pitch) + meta->start_x;
-      const float* coeff_ptr = meta->coeff;
+      const float* coeff_ptr = coeff->factor + meta->coeff;
       float result = 0.0;
 
       for (int ly = 0; ly < coeff->filter_size; ly++) {
@@ -301,7 +297,7 @@ static void resize_plane_sse(EWAPixelCoeff* coeff, BYTE* dst, const BYTE* src, i
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
       const BYTE* src_ptr = src + (meta->start_y * src_pitch) + meta->start_x;
-      const float* coeff_ptr = meta->coeff;
+      const float* coeff_ptr = coeff->factor + meta->coeff;
       
       __m128 result = _mm_setzero_ps();
       __m128i zero = _mm_setzero_si128();
@@ -370,7 +366,7 @@ static void resize_plane_avx(EWAPixelCoeff* coeff, BYTE* dst, const BYTE* src, i
   for (int y = 0; y < dst_height; y++) {
     for (int x = 0; x < dst_width; x++) {
       const BYTE* src_ptr = src + (meta->start_y * src_pitch) + meta->start_x;
-      const float* coeff_ptr = meta->coeff;
+      const float* coeff_ptr = coeff->factor + meta->coeff;
 
       __m256 result = _mm256_setzero_ps();
       __m256i zero = _mm256_setzero_si256();

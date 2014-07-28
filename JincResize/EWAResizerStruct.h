@@ -6,14 +6,14 @@
 struct EWAPixelCoeffMeta
 {
   int start_x, start_y;
-  float* coeff;
+  int coeff;
 };
 
 struct EWAPixelCoeff
 {
   float* factor;
   EWAPixelCoeffMeta* meta;
-  float** factor_map;
+  int* factor_map;
 
   int filter_size, quantize_x, quantize_y, coeff_stripe;
 };
