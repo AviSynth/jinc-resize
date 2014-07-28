@@ -65,7 +65,7 @@ static void init_coeff_table(EWACore* func, EWAPixelCoeff* out, int quantize_x, 
   // Zeroed memory
   memset(out->factor, 0, total_coeff * sizeof(float));
   if (quantize_x*quantize_y > 0)
-    memset(out->factor_map, 0, quantize_x*quantize_y * sizeof(float));
+    memset(out->factor_map, 0, quantize_x*quantize_y * sizeof(float*));
   memset(out->meta, 0, dst_width * dst_height);
 }
 
@@ -147,8 +147,8 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
       meta->start_y = window_begin_y;
 
       // Quantize xpos and ypos
-      const int quantized_x_int = int(xpos * quantize_x + 0.5f);
-      const int quantized_y_int = int(ypos * quantize_y + 0.5f);
+      const int quantized_x_int = int(double(xpos) * quantize_x + 0.5);
+      const int quantized_y_int = int(double(ypos) * quantize_y + 0.5);
       const int quantized_x_value = quantized_x_int % quantize_x;
       const int quantized_y_value = quantized_y_int % quantize_y;
       const float quantized_xpos = float(quantized_x_int) / quantize_x;
@@ -164,6 +164,12 @@ static void generate_coeff_table_c(EWACore* func, EWAPixelCoeff* out, int quanti
         // Quantized
         float current_x = clamp(0.f, is_border ? xpos : quantized_xpos, src_width - 1.f);
         float current_y = clamp(0.f, is_border ? ypos : quantized_ypos, src_height - 1.f);
+
+        if (!is_border) {
+          // Change window position to quantized position
+          window_begin_x = int(quantized_xpos + filter_support) - filter_size + 1;
+          window_begin_y = int(quantized_ypos + filter_support) - filter_size + 1;
+        }
 
         // Windowing position
         int window_y = window_begin_y;
